@@ -1,53 +1,24 @@
 package com.iqvia.exercise;
 
-import java.io.File;
-import java.net.MalformedURLException;
-import java.net.URL;
+import java.io.StringWriter;
 import java.text.SimpleDateFormat;
-import java.util.List;
-import java.util.logging.Logger;
-import java.util.stream.Collectors;
-
-
-import org.springframework.beans.factory.annotation.Autowired;
+import javax.xml.bind.JAXBContext;
+import javax.xml.bind.JAXBException;
+import javax.xml.bind.Marshaller;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.Resource;
-import org.springframework.expression.Expression;
-import org.springframework.expression.spel.standard.SpelExpressionParser;
-import org.springframework.integration.annotation.ServiceActivator;
 import org.springframework.integration.annotation.Transformer;
-import org.springframework.integration.core.MessageSource;
 import org.springframework.integration.dsl.IntegrationFlow;
 import org.springframework.integration.dsl.IntegrationFlows;
-import org.springframework.integration.dsl.Pollers;
-import org.springframework.integration.endpoint.AbstractMessageSource;
-import org.springframework.integration.feed.config.FeedInboundChannelAdapterParser;
 import org.springframework.integration.feed.dsl.Feed;
-import org.springframework.integration.feed.dsl.FeedEntryMessageSourceSpec;
-import org.springframework.integration.feed.inbound.FeedEntryMessageSource;
-import org.springframework.integration.file.FileNameGenerator;
-import org.springframework.integration.file.FileWritingMessageHandler;
 import org.springframework.integration.file.dsl.Files;
-import org.springframework.integration.file.support.FileExistsMode;
 import org.springframework.integration.handler.LoggingHandler;
 import org.springframework.integration.metadata.MetadataStore;
 import org.springframework.integration.metadata.PropertiesPersistingMetadataStore;
-import org.springframework.integration.scheduling.PollerMetadata;
-import org.springframework.integration.support.MessageBuilder;
-import org.springframework.integration.support.management.MessageSourceManagement;
 import org.springframework.messaging.Message;
-import org.springframework.messaging.MessageHandler;
-import org.springframework.integration.annotation.Poller;
-
-import com.rometools.rome.feed.module.Module;
-import com.rometools.rome.feed.synd.SyndContent;
 import com.rometools.rome.feed.synd.SyndEntry;
-import com.rometools.rome.feed.synd.SyndFeed;
-import com.rometools.rome.feed.synd.SyndLink;
-import com.rometools.rome.io.SyndFeedInput;
-import com.rometools.rome.io.XmlReader;
 
 @Configuration
 public class InterationConfig {
@@ -69,28 +40,33 @@ public class InterationConfig {
 	           .enrichHeaders(h -> h.headerExpression("fileName","payload.uri.toString()"))
 	           .enrichHeaders(h -> h.headerFunction("dir", m -> parseDirectory(m)))
 	           .enrichHeaders(h -> h.headerFunction("logData", m -> logData(m)))
-	           .transform(m -> transformSyndEntryToString(m))
-	           .log(LoggingHandler.Level.INFO,"TEST_LOGGER",m -> m.getHeaders().get("logData"))
+//	           .log(LoggingHandler.Level.INFO,"TEST_LOGGER",m -> m.getHeaders().get("logData"))
+	           .transform(m -> transformSyndEntryToXmlString(m)) 
+	           
 	           .handle(Files.outboundAdapter(m -> m.getHeaders().get("dir"))
                        .fileNameGenerator(m -> m.getHeaders().get("fileName").toString()+".xml")
                        .autoCreateDirectory(true))
-//	            .channel(c -> c.queue("entries"))
-	           
+	           .transform(m -> m.toString())
+	           .log(LoggingHandler.Level.INFO,"TEST_LOGGER",m -> m.getHeaders().get("logData"))
+//	           .logAndReply(LoggingHandler.Level.INFO,"TEST_LOGGER",m -> m.getHeaders().get("logData"));
+//	            .channel(c -> c.queue("entries"))	          	           
 	            .get();
 	   }
 
 	   
 	   String logData(Message<Object> m){
-		   
 	        SyndEntry message = (SyndEntry) m.getPayload();
 	        return message.getLink();
 	   }
 	
 	   String parseDirectory(Message<Object> m){
-		   
-		   LoggingHandler adapter = new LoggingHandler(LoggingHandler.Level.DEBUG);
 	        SyndEntry message = (SyndEntry) m.getPayload();
-	        if(message.getPublishedDate()!=null)
+	        String direcoryStructure = createDirectoryStructure(message);
+	        return direcoryStructure;       
+	    }
+	   
+	   String createDirectoryStructure(SyndEntry message) {
+		   if(message.getPublishedDate()!=null)
 	        {
 	        	SimpleDateFormat smpl = new SimpleDateFormat("yyyy-MM-dd");
 	        	String date = smpl.format(message.getPublishedDate());
@@ -98,32 +74,66 @@ public class InterationConfig {
 	        		String category = message.getCategories().get(0).getName();
 	        		return rootFolder+"/"+date+"/"+category;
 	        	}
-	        	
-	        	return date;
+	        	else {
+	        	return rootFolder+"/"+date+"categoryNotPresent";
 	        	}
+	        }
 	        else
-	        	{return "pradeep";}
-//	        return message.getPublishedDate().toString().concat("/").concat("ashim");
-	        //return "pradeep/singh";
-	    }
+	        	{return rootFolder+"/"+"dateNotThere";}
+		   
+	   }
 
 	
 	 @Bean
-	    public MetadataStore metadataStore() {
+	   public MetadataStore metadataStore() {
 	        PropertiesPersistingMetadataStore metadataStore = new PropertiesPersistingMetadataStore();
 	        metadataStore.setBaseDirectory("C:\\Users\\pradeep.bhati\\tmp\\foo");
 	        return metadataStore;
 	    }
 	 
 	   @Transformer
-	   String transformSyndEntryToString(Object o) {
-	      SyndEntry message = (SyndEntry) o;
-	      String processedMsg = message.getComments();
-//	      message.getPublishedDate().toString();
-//	      message.getComments();
-//	       return processedMsg;
-	      
-	       return message.toString();
+	   String transformSyndEntryToXmlString(Object o)  {
+		  SyndEntry message = (SyndEntry) o;
+		  Item item = populateItem(message);
+		  String ItemXml = doMarshall(item);
+		  return ItemXml;	             
+	   }
+	   
+	   Item populateItem(SyndEntry message)
+	   {
+		   	Item item = new Item();
+			item.setLink(message.getLink());
+			item.setTitle(message.getTitle());
+			if(message.getCategories()!=null) {
+	      		String category = message.getCategories().get(0).getName();
+	      		item.setCategory(category);
+	      	}
+			if(message.getPublishedDate()!=null) {
+			  item.setPubDate(message.getPublishedDate().toString());
+			}
+			if(message.getDescription()!=null) {
+			  item.setDescription(message.getDescription().getValue());
+			}
+			item.setGuid(message.getUri());
+			item.setComment(message.getComments());
+			return item;
+	   }
+	   
+	   
+	   String doMarshall(Item item) {
+		   JAXBContext contextObj;
+		   StringWriter sw = new StringWriter();
+			try {
+				contextObj = JAXBContext.newInstance(Item.class);
+				Marshaller marshallerObj =  contextObj.createMarshaller();
+				marshallerObj.setProperty(Marshaller.JAXB_FORMATTED_OUTPUT, true); 
+				marshallerObj.marshal(item, sw);	
+				
+			} catch (JAXBException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			} 				  
+		return sw.toString();	   
 	   }
 	
 //	    @Bean	
