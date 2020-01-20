@@ -9,15 +9,19 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.Resource;
+import org.springframework.core.task.TaskExecutor;
 import org.springframework.integration.annotation.Transformer;
 import org.springframework.integration.dsl.IntegrationFlow;
 import org.springframework.integration.dsl.IntegrationFlows;
+import org.springframework.integration.dsl.MessageChannels;
 import org.springframework.integration.feed.dsl.Feed;
 import org.springframework.integration.file.dsl.Files;
 import org.springframework.integration.handler.LoggingHandler;
 import org.springframework.integration.metadata.MetadataStore;
 import org.springframework.integration.metadata.PropertiesPersistingMetadataStore;
 import org.springframework.messaging.Message;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+
 import com.rometools.rome.feed.synd.SyndEntry;
 
 @Configuration
@@ -36,6 +40,7 @@ public class InterationConfig {
 	            .from(Feed.inboundAdapter(this.feedResource, "pubDate")
 	                        .metadataStore(metadataStore()),
 	                  e -> e.poller(p -> p.fixedDelay(100)))
+	            .channel(MessageChannels.executor("executorChannel",threadPoolTaskExecutor()))
 //	          .transform(Transformers.objectToString())
 	           .enrichHeaders(h -> h.headerExpression("fileName","payload.uri.toString()"))
 	           .enrichHeaders(h -> h.headerFunction("dir", m -> parseDirectory(m)))
@@ -53,6 +58,16 @@ public class InterationConfig {
 	            .get();
 	   }
 
+	   @Bean
+	   public TaskExecutor threadPoolTaskExecutor() {
+	     
+	     ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+	     executor.setThreadNamePrefix("Demo_Thread_");
+	     executor.setMaxPoolSize(5);
+	     executor.setCorePoolSize(5);
+	     executor.setQueueCapacity(22);
+	     return executor;
+	   }
 	   
 	   String logData(Message<Object> m){
 	        SyndEntry message = (SyndEntry) m.getPayload();
