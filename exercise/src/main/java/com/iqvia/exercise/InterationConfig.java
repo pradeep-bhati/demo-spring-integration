@@ -1,5 +1,6 @@
 package com.iqvia.exercise;
 
+import java.io.File;
 import java.io.StringWriter;
 import java.text.SimpleDateFormat;
 import javax.xml.bind.JAXBContext;
@@ -10,16 +11,23 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.Resource;
 import org.springframework.core.task.TaskExecutor;
+import org.springframework.integration.annotation.ServiceActivator;
 import org.springframework.integration.annotation.Transformer;
 import org.springframework.integration.dsl.IntegrationFlow;
 import org.springframework.integration.dsl.IntegrationFlows;
 import org.springframework.integration.dsl.MessageChannels;
+import org.springframework.integration.dsl.Pollers;
 import org.springframework.integration.feed.dsl.Feed;
+import org.springframework.integration.file.FileWritingMessageHandler;
 import org.springframework.integration.file.dsl.Files;
+import org.springframework.integration.file.support.FileExistsMode;
 import org.springframework.integration.handler.LoggingHandler;
 import org.springframework.integration.metadata.MetadataStore;
 import org.springframework.integration.metadata.PropertiesPersistingMetadataStore;
+import org.springframework.integration.scheduling.PollerMetadata;
 import org.springframework.messaging.Message;
+import org.springframework.messaging.MessageHandler;
+import org.springframework.messaging.MessageHandlingException;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 import com.rometools.rome.feed.synd.SyndEntry;
@@ -151,24 +159,28 @@ public class InterationConfig {
 		return sw.toString();	   
 	   }
 	
-//	    @Bean	
-//	    @ServiceActivator(inputChannel = "entries", poller = @Poller(fixedRate = "5000", maxMessagesPerPoll = "10"))
-//	    public MessageHandler fileWritingMessageHandler() {
-//	    	
-//	    	Expression directoryExpression = new SpelExpressionParser().parseExpression("headers.dir");
-//	        FileWritingMessageHandler handler = new FileWritingMessageHandler(directoryExpression);
-//	        handler.setFileExistsMode(FileExistsMode.REPLACE);  
-//	        handler.setExpectReply(false);
-//	        handler.setFileNameGenerator(a -> a.getHeaders().getId().toString());
-//	        handler.setAutoCreateDirectory(true);
-//	        
-//	        
-//	        return handler;
-//	    }
-//	    
-//	    @Bean(name = PollerMetadata.DEFAULT_POLLER)
-//	    public PollerMetadata poller() {
-//	        return Pollers.fixedDelay(1000).get();
-//	    }
+	 	@Bean	
+	    @ServiceActivator(inputChannel = "errorOut")
+	    public MessageHandler fileWritingMessageHandler() {
+	   	
+	        FileWritingMessageHandler handler = new FileWritingMessageHandler(new File("C:\\Users\\pradeep.bhati\\error"));
+	        handler.setFileExistsMode(FileExistsMode.REPLACE);  
+	        handler.setExpectReply(false);    
+	        handler.setFileNameGenerator(a -> a.getHeaders().getId().toString());
+	        handler.setAutoCreateDirectory(true);
+	        return handler;
+	    }
+	   	
+	    @Transformer(inputChannel = "errorChannel",outputChannel="errorOut")
+		   String transformError(Message<MessageHandlingException> message)  {
+			  message.getPayload().getCause().getMessage();		  
+			  return message.getPayload().getCause().getMessage();	             
+		   }
+	    
+	    @Bean(name = PollerMetadata.DEFAULT_POLLER)
+	    public PollerMetadata poller() {
+	        return Pollers.fixedDelay(100).get();
+	    }
+
 
 }
